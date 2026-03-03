@@ -35,6 +35,10 @@ You MUST return a structured report in Markdown exactly following these sections
 *(List the identified anchors that drive relevant traffic)*
 
 ### Sentiment Analysis
+*(Provide a summary count for each category: Positive, Negative, Neutral)*
+- **Positive:** [Count]
+- **Negative:** [Count]
+- **Neutral:** [Count]
 *(What customers are saying is missing in this area based on reviews)*
 
 ### Budget Alignment Strategy (${budgetLevel} Budget)

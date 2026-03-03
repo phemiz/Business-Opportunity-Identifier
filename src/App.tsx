@@ -1,15 +1,51 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { analyzeMarket } from './services/geminiService';
 import Markdown from 'react-markdown';
-import { MapPin, Search, Building2, Target, Loader2, ExternalLink, AlertCircle, DollarSign, Map as MapIcon, TrendingUp } from 'lucide-react';
+import { MapPin, Search, Building2, Target, Loader2, ExternalLink, AlertCircle, DollarSign, Map as MapIcon, TrendingUp, History, Trash2, Save, ChevronRight, PieChart } from 'lucide-react';
+
+interface SavedReport {
+  id: number;
+  business_type: string;
+  location: string;
+  budget: number;
+  score: string;
+  report_text: string;
+  map_links: { title: string; uri: string }[];
+  created_at: string;
+}
+
+const INDUSTRIES = [
+  "Retail", "Food & Beverage", "Health & Wellness", "Professional Services", 
+  "Entertainment", "Automotive", "Technology", "Education", "Other"
+];
 
 export default function App() {
   const [businessModel, setBusinessModel] = useState('');
+  const [industry, setIndustry] = useState(INDUSTRIES[0]);
   const [location, setLocation] = useState('');
-  const [budgetLevel, setBudgetLevel] = useState('Medium');
+  const [budget, setBudget] = useState(50000);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<{ text: string; mapLinks: { title: string; uri: string }[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<SavedReport[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch('/api/reports');
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch history:", err);
+    }
+  };
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,12 +56,52 @@ export default function App() {
     setResult(null);
 
     try {
-      const analysis = await analyzeMarket(businessModel, location, budgetLevel);
+      const budgetText = budget >= 100000 ? "$100k+" : `$${(budget / 1000).toFixed(0)}k`;
+      const analysis = await analyzeMarket(`${industry}: ${businessModel}`, location, budgetText);
       setResult(analysis);
     } catch (err: any) {
       setError(err.message || 'Failed to analyze market. Please try again.');
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!result) return;
+    setIsSaving(true);
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessType: `${industry}: ${businessModel}`,
+          location,
+          budget,
+          score: getScore(result.text) || "N/A",
+          reportText: result.text,
+          mapLinks: result.mapLinks
+        })
+      });
+      if (res.ok) {
+        await fetchHistory();
+        alert("Report saved successfully!");
+      }
+    } catch (err) {
+      console.error("Failed to save report:", err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this report?")) return;
+    try {
+      const res = await fetch(`/api/reports/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchHistory();
+      }
+    } catch (err) {
+      console.error("Failed to delete report:", err);
     }
   };
 
@@ -35,7 +111,20 @@ export default function App() {
     return match ? match[1] : null;
   };
 
+  // Helper to extract sentiment counts
+  const getSentimentCounts = (text: string) => {
+    const pos = text.match(/Positive:\s*\*?\*?(\d+)/i);
+    const neg = text.match(/Negative:\s*\*?\*?(\d+)/i);
+    const neu = text.match(/Neutral:\s*\*?\*?(\d+)/i);
+    return {
+      positive: pos ? pos[1] : "0",
+      negative: neg ? neg[1] : "0",
+      neutral: neu ? neu[1] : "0"
+    };
+  };
+
   const score = result ? getScore(result.text) : null;
+  const sentiments = result ? getSentimentCounts(result.text) : null;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
@@ -51,11 +140,62 @@ export default function App() {
               <p className="text-xs text-slate-500 font-medium">Geospatial Intelligence Engine</p>
             </div>
           </div>
+          <button 
+            onClick={() => setShowHistory(!showHistory)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors text-sm font-medium"
+          >
+            <History className="w-4 h-4" />
+            {showHistory ? "Hide History" : "View History"}
+          </button>
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-6 relative">
         
+        {/* History Sidebar Overlay */}
+        {showHistory && (
+          <div className="absolute inset-y-0 left-0 w-full lg:w-80 bg-white border-r border-slate-200 z-20 shadow-xl overflow-y-auto p-6 animate-in slide-in-from-left duration-300">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <History className="w-5 h-5 text-indigo-600" />
+                Past Evaluations
+              </h2>
+              <button onClick={() => setShowHistory(false)} className="text-slate-400 hover:text-slate-600">
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {history.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-8">No saved reports yet.</p>
+              ) : (
+                history.map((report) => (
+                  <div key={report.id} className="group p-4 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all cursor-pointer" onClick={() => {
+                    setResult({ text: report.report_text, mapLinks: report.map_links });
+                    setBusinessModel(report.business_type.split(': ')[1] || report.business_type);
+                    setLocation(report.location);
+                    setBudget(report.budget);
+                    setShowHistory(false);
+                  }}>
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">{report.score}/10</span>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDelete(report.id); }}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-opacity"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <h3 className="text-sm font-semibold text-slate-900 truncate">{report.business_type}</h3>
+                    <p className="text-xs text-slate-500 truncate mb-2">{report.location}</p>
+                    <span className="text-[10px] text-slate-400">{new Date(report.created_at).toLocaleDateString()}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Left Column: Input & Map Visualization */}
         <div className="w-full lg:w-5/12 flex flex-col gap-6">
           
@@ -67,71 +207,74 @@ export default function App() {
             </h2>
             
             <form onSubmit={handleAnalyze} className="space-y-4">
-              <div>
-                <label htmlFor="businessModel" className="block text-sm font-medium text-slate-700 mb-1">
-                  Business Type
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Building2 className="h-4 w-4 text-slate-400" />
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Industry</label>
+                  <select
+                    value={industry}
+                    onChange={(e) => setIndustry(e.target.value)}
+                    className="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent sm:text-sm appearance-none bg-white"
+                  >
+                    {INDUSTRIES.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Business Name/Type</label>
                   <input
                     type="text"
-                    id="businessModel"
                     required
                     value={businessModel}
                     onChange={(e) => setBusinessModel(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent sm:text-sm transition-shadow"
-                    placeholder="e.g., Specialty Coffee Shop"
+                    className="block w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent sm:text-sm"
+                    placeholder="e.g., Artisan Coffee"
                   />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="location" className="block text-sm font-medium text-slate-700 mb-1">
-                  Target City / Location
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Target City / Location</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <MapPin className="h-4 w-4 text-slate-400" />
                   </div>
                   <input
                     type="text"
-                    id="location"
                     required
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent sm:text-sm transition-shadow"
+                    className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent sm:text-sm"
                     placeholder="e.g., Downtown Austin, TX"
                   />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="budgetLevel" className="block text-sm font-medium text-slate-700 mb-1">
-                  Budget Level
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <DollarSign className="h-4 w-4 text-slate-400" />
-                  </div>
-                  <select
-                    id="budgetLevel"
-                    value={budgetLevel}
-                    onChange={(e) => setBudgetLevel(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent sm:text-sm transition-shadow appearance-none bg-white"
-                  >
-                    <option value="Low">Low (Bootstrapped / Lean)</option>
-                    <option value="Medium">Medium (Standard Commercial)</option>
-                    <option value="High">High (Premium / Main Street)</option>
-                  </select>
+                <div className="flex justify-between mb-1">
+                  <label className="text-sm font-medium text-slate-700">Budget Allocation</label>
+                  <span className="text-sm font-bold text-indigo-600">
+                    {budget >= 100000 ? "$100k+" : `$${(budget / 1000).toFixed(0)}k`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="5000"
+                  max="100000"
+                  step="5000"
+                  value={budget}
+                  onChange={(e) => setBudget(parseInt(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                  <span>$5k</span>
+                  <span>$50k</span>
+                  <span>$100k+</span>
                 </div>
               </div>
 
               <button
                 type="submit"
                 disabled={isAnalyzing || !businessModel || !location}
-                className="w-full flex justify-center items-center py-2.5 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-2"
+                className="w-full flex justify-center items-center py-2.5 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isAnalyzing ? (
                   <>
@@ -145,12 +288,20 @@ export default function App() {
             </form>
           </div>
 
-          {/* Map Visualization (Simulated) */}
+          {/* Map Visualization (Simulated with Heatmap) */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex-1 flex flex-col min-h-[300px]">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <MapIcon className="w-5 h-5 text-indigo-600" />
-              Interactive Map
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <MapIcon className="w-5 h-5 text-indigo-600" />
+                Interactive Map
+              </h2>
+              {result && (
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-orange-500/30 border border-orange-500"></div>
+                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Density Heatmap</span>
+                </div>
+              )}
+            </div>
             
             <div className="flex-1 bg-slate-100 rounded-xl border border-slate-200 relative overflow-hidden flex items-center justify-center">
               {/* Grid Background Pattern */}
@@ -177,10 +328,22 @@ export default function App() {
 
               {result && !isAnalyzing && (
                 <div className="absolute inset-0 p-4">
-                  {/* Simulated Pins based on mapLinks */}
+                  {/* Simulated Heatmap Layer */}
+                  {result.mapLinks.length > 0 && result.mapLinks.map((_, idx) => {
+                    const top = `${20 + ((idx * 37) % 60)}%`;
+                    const left = `${15 + ((idx * 43) % 70)}%`;
+                    return (
+                      <div 
+                        key={`heat-${idx}`} 
+                        className="absolute w-24 h-24 -ml-12 -mt-12 rounded-full bg-orange-500/10 blur-xl animate-pulse"
+                        style={{ top, left, animationDelay: `${idx * 200}ms` }}
+                      ></div>
+                    );
+                  })}
+
+                  {/* Simulated Pins */}
                   {result.mapLinks.length > 0 ? (
                     result.mapLinks.map((link, idx) => {
-                      // Generate pseudo-random positions based on index to scatter them
                       const top = `${20 + ((idx * 37) % 60)}%`;
                       const left = `${15 + ((idx * 43) % 70)}%`;
                       return (
@@ -225,14 +388,26 @@ export default function App() {
                 <Target className="w-5 h-5 text-indigo-600" />
                 Data Analysis
               </h2>
-              {score && (
-                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
-                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Viability</span>
-                  <span className={`text-lg font-bold ${Number(score) >= 7 ? 'text-emerald-600' : Number(score) >= 4 ? 'text-amber-500' : 'text-red-500'}`}>
-                    {score}/10
-                  </span>
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                {result && (
+                  <button 
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors text-xs font-bold disabled:opacity-50"
+                  >
+                    {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                    Save Report
+                  </button>
+                )}
+                {score && (
+                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
+                    <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Viability</span>
+                    <span className={`text-lg font-bold ${Number(score) >= 7 ? 'text-emerald-600' : Number(score) >= 4 ? 'text-amber-500' : 'text-red-500'}`}>
+                      {score}/10
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="p-6 flex-1 overflow-y-auto">
@@ -265,6 +440,24 @@ export default function App() {
 
               {result && !isAnalyzing && (
                 <div className="space-y-8">
+                  {/* Sentiment Summary Cards */}
+                  {sentiments && (
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl text-center">
+                        <div className="text-emerald-600 font-bold text-xl">{sentiments.positive}</div>
+                        <div className="text-[10px] text-emerald-700 font-bold uppercase tracking-wider">Positive</div>
+                      </div>
+                      <div className="bg-red-50 border border-red-100 p-4 rounded-2xl text-center">
+                        <div className="text-red-600 font-bold text-xl">{sentiments.negative}</div>
+                        <div className="text-[10px] text-red-700 font-bold uppercase tracking-wider">Negative</div>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl text-center">
+                        <div className="text-slate-600 font-bold text-xl">{sentiments.neutral}</div>
+                        <div className="text-[10px] text-slate-700 font-bold uppercase tracking-wider">Neutral</div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Markdown Report */}
                   <div className="prose prose-slate prose-indigo max-w-none prose-headings:font-semibold prose-h3:text-lg prose-h3:border-b prose-h3:pb-2 prose-h3:border-slate-100 prose-table:w-full prose-th:bg-slate-50 prose-th:p-3 prose-td:p-3 prose-tr:border-b prose-tr:border-slate-100">
                     <Markdown>{result.text}</Markdown>
