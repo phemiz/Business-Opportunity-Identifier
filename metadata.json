@@ -1,5 +1,5 @@
 {
-  "name": "Vantage",
-  "description": "Evaluate business model viability using geospatial data, competitive density, and consumer sentiment via Google Maps Grounding.",
+  "name": "NaijaDocs AI",
+  "description": "Generate formal Nigerian documents (Business Plans, Tenancy Agreements, NGO Constitutions) instantly.",
   "requestFramePermissions": []
 }
