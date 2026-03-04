@@ -1,5 +1,5 @@
 {
-  "name": "Location Intelligence Engine",
+  "name": "Vantage",
   "description": "Evaluate business model viability using geospatial data, competitive density, and consumer sentiment via Google Maps Grounding.",
   "requestFramePermissions": []
 }

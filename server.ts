@@ -1,71 +1,18 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
+import apiRouter from "./api/index.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const db = new Database("reports.db");
-
-// Initialize database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    business_type TEXT,
-    location TEXT,
-    budget INTEGER,
-    score TEXT,
-    report_text TEXT,
-    map_links TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`);
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
-
-  // API Routes
-  app.post("/api/reports", (req, res) => {
-    const { businessType, location, budget, score, reportText, mapLinks } = req.body;
-    try {
-      const stmt = db.prepare(`
-        INSERT INTO reports (business_type, location, budget, score, report_text, map_links)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
-      const info = stmt.run(businessType, location, budget, score, reportText, JSON.stringify(mapLinks));
-      res.json({ id: info.lastInsertRowid });
-    } catch (error) {
-      console.error("Database error:", error);
-      res.status(500).json({ error: "Failed to save report" });
-    }
-  });
-
-  app.get("/api/reports", (req, res) => {
-    try {
-      const reports = db.prepare("SELECT * FROM reports ORDER BY created_at DESC").all();
-      res.json(reports.map(r => ({
-        ...r,
-        map_links: JSON.parse(r.map_links as string)
-      })));
-    } catch (error) {
-      console.error("Database error:", error);
-      res.status(500).json({ error: "Failed to fetch reports" });
-    }
-  });
-
-  app.delete("/api/reports/:id", (req, res) => {
-    try {
-      db.prepare("DELETE FROM reports WHERE id = ?").run(req.params.id);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete report" });
-    }
-  });
+  // Mount the API routes
+  app.use(apiRouter);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

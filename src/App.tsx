@@ -136,8 +136,8 @@ export default function App() {
               <TrendingUp className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold tracking-tight text-slate-900">Business Opportunity Identifier</h1>
-              <p className="text-xs text-slate-500 font-medium">Geospatial Intelligence Engine</p>
+              <h1 className="text-xl font-semibold tracking-tight text-slate-900">Vantage</h1>
+              <p className="text-xs text-slate-500 font-medium">Business Opportunity Identifier Engine</p>
             </div>
           </div>
           <button 
